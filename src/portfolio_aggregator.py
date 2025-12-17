@@ -5,12 +5,14 @@ Combines stocks, crypto, and bonds into a unified portfolio view
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 from .stock_portfolio import StockPortfolio
 from .crypto_portfolio import CryptoPortfolio
 from .bond_portfolio import BondPortfolio
 from .market_data import MarketDataFetcher
+from .historical_data import HistoricalDataManager
+from .portfolio_performance import PortfolioPerformanceCalculator
 
 
 class PortfolioAggregator:
@@ -26,6 +28,10 @@ class PortfolioAggregator:
         self.stock_portfolio = StockPortfolio('data/stocks/orders.csv', self.market_data)
         self.crypto_portfolio = CryptoPortfolio('data/crypto/orders.csv', self.market_data)
         self.bond_portfolio = BondPortfolio('data/bonds', self.market_data)
+
+        # Historical data and performance
+        self.historical_manager = HistoricalDataManager()
+        self.performance_calculator = PortfolioPerformanceCalculator(self.historical_manager)
 
         # Currency conversions
         self.usd_brl = None
@@ -272,6 +278,186 @@ class PortfolioAggregator:
                 json.dump(report, f, indent=2, ensure_ascii=False, default=str)
 
         return report
+
+    def initialize_historical_data(self, start_date: str = '2020-01-01', batch_days: int = 90):
+        """
+        Initialize historical data for all portfolio assets
+
+        Args:
+            start_date: Start date for historical data
+            batch_days: Days per batch for fetching
+
+        Returns:
+            Dictionary with fetch statistics
+        """
+        print(f"\n{'='*60}")
+        print("Initializing Historical Data for Portfolio")
+        print(f"{'='*60}\n")
+
+        # Get all unique symbols from portfolios
+        symbols = []
+
+        # Stocks
+        if not self.stock_portfolio.positions:
+            self.stock_portfolio.calculate_positions()
+
+        for symbol, pos in self.stock_portfolio.positions.items():
+            if pos['quantity'] != 0:
+                yahoo_symbol = self.stock_portfolio._get_yahoo_symbol(symbol, pos['market'])
+                symbols.append(yahoo_symbol)
+
+        # Crypto
+        if not self.crypto_portfolio.positions:
+            self.crypto_portfolio.calculate_positions()
+
+        for symbol in self.crypto_portfolio.positions.keys():
+            crypto_symbol = f"{symbol}-USD" if not symbol.endswith('-USD') else symbol
+            symbols.append(crypto_symbol)
+
+        # Remove duplicates
+        symbols = list(set(symbols))
+
+        print(f"Found {len(symbols)} unique symbols to fetch")
+        print(f"Symbols: {', '.join(symbols[:10])}{'...' if len(symbols) > 10 else ''}\n")
+
+        # Bulk fetch
+        self.historical_manager.bulk_fetch(symbols, start_date, batch_days=batch_days)
+
+        # Get stats
+        stats = self.historical_manager.get_database_stats()
+
+        print(f"\n{'='*60}")
+        print("Historical Data Initialization Complete!")
+        print(f"{'='*60}")
+        print(f"Total symbols: {stats['total_symbols']}")
+        print(f"Total records: {stats['total_records']}")
+        print(f"{'='*60}\n")
+
+        return stats
+
+    def get_historical_performance(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        period: str = '1Y'
+    ) -> Dict:
+        """
+        Get historical portfolio performance
+
+        Args:
+            start_date: Start date (YYYY-MM-DD)
+            end_date: End date (YYYY-MM-DD)
+            period: Preset period (1M, 3M, 6M, 1Y, 3Y, 5Y, YTD, MAX)
+
+        Returns:
+            Dictionary with performance data and metrics
+        """
+        # Handle preset periods
+        if not start_date:
+            end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+            end_ts = pd.Timestamp(end_date)
+
+            if period == '1M':
+                start_date = (end_ts - timedelta(days=30)).strftime('%Y-%m-%d')
+            elif period == '3M':
+                start_date = (end_ts - timedelta(days=90)).strftime('%Y-%m-%d')
+            elif period == '6M':
+                start_date = (end_ts - timedelta(days=180)).strftime('%Y-%m-%d')
+            elif period == '1Y':
+                start_date = (end_ts - timedelta(days=365)).strftime('%Y-%m-%d')
+            elif period == '3Y':
+                start_date = (end_ts - timedelta(days=1095)).strftime('%Y-%m-%d')
+            elif period == '5Y':
+                start_date = (end_ts - timedelta(days=1825)).strftime('%Y-%m-%d')
+            elif period == 'YTD':
+                start_date = f"{end_ts.year}-01-01"
+            elif period == 'MAX':
+                start_date = '2020-01-01'
+            else:
+                start_date = (end_ts - timedelta(days=365)).strftime('%Y-%m-%d')
+
+        # Calculate portfolio history
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return {
+                'performance': [],
+                'metrics': {},
+                'period': period,
+                'start_date': start_date,
+                'end_date': end_date
+            }
+
+        # Calculate risk metrics
+        metrics = self.performance_calculator.calculate_risk_metrics(history_df)
+
+        # Get drawdown data
+        drawdown_df = self.performance_calculator.get_drawdown_series(history_df['total_value'])
+
+        # Get rolling metrics
+        rolling_metrics = self.performance_calculator.get_rolling_metrics(history_df, window_days=30)
+
+        return {
+            'performance': history_df.to_dict('records'),
+            'metrics': metrics,
+            'drawdown': drawdown_df.to_dict('records'),
+            'rolling_metrics': rolling_metrics.to_dict('records'),
+            'period': period,
+            'start_date': start_date,
+            'end_date': end_date or datetime.now().strftime('%Y-%m-%d')
+        }
+
+    def get_performance_comparison(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        benchmark: str = '^BVSP'  # Bovespa Index for Brazilian portfolio
+    ) -> Dict:
+        """
+        Compare portfolio performance to benchmark
+
+        Args:
+            start_date: Start date
+            end_date: End date
+            benchmark: Benchmark symbol (default: Bovespa)
+
+        Returns:
+            Dictionary with comparison data
+        """
+        if not start_date:
+            end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+            start_date = (pd.Timestamp(end_date) - timedelta(days=365)).strftime('%Y-%m-%d')
+
+        # Get portfolio history
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return {}
+
+        # Compare to benchmark
+        comparison_df = self.performance_calculator.compare_to_benchmark(
+            history_df,
+            benchmark
+        )
+
+        return {
+            'comparison': comparison_df.to_dict('records'),
+            'benchmark_symbol': benchmark,
+            'start_date': start_date,
+            'end_date': end_date
+        }
 
 
 def test_portfolio_aggregator():
