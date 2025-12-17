@@ -2,6 +2,8 @@
 
 A comprehensive portfolio tracking system for managing stocks, cryptocurrencies, and bonds with real-time market data, P&L tracking, and advanced analytics.
 
+**Version 3.0** - Now with professional fund accounting, investor management, and performance analytics!
+
 ## Features
 
 ### Multi-Asset Portfolio Tracking
@@ -15,13 +17,41 @@ A comprehensive portfolio tracking system for managing stocks, cryptocurrencies,
   - NTN-B, LTN, LFT
   - COE (Certificado de Operações Estruturadas)
 
-### Advanced Features
+### NEW in v3.0: Fund Accounting & Analytics
+- **💰 Fund Accounting System**
+  - Net Asset Value (NAV) tracking with portfolio, cash, and fee integration
+  - Investor stake management and tracking over time
+  - Management fee (2% annual) calculation
+  - Performance fee (20% on gains above high water mark)
+  - Cash deposit/withdrawal tracking with multi-currency support
+  - Complete audit trail via CSV transaction logs
+
+- **📊 Performance Analytics**
+  - Monthly performance heatmap (Plotly & Seaborn visualizations)
+  - Cumulative returns comparison (portfolio vs individual assets)
+  - Alpha analysis (Simple alpha, Jensen's alpha, Beta)
+  - Information ratio and tracking error calculation
+  - Risk-adjusted performance metrics
+  - Interactive dashboards with Plotly charts
+
+- **👥 Investor Management**
+  - Individual investor positions and NAV allocation
+  - Track deposits, withdrawals, and net contributions
+  - Calculate investor-specific returns and unrealized gains
+  - Stake percentage tracking
+  - Complete investor reporting
+
+### Core Features
 - **Real-time Market Data**: Integration with Yahoo Finance for stocks and crypto
 - **IPCA Indexation**: Automatic inflation adjustment for Brazilian bonds using Bacen API
 - **P&L Tracking**: Realized and unrealized profit/loss calculations
 - **Multi-Currency Support**: BRL, USD, EUR conversions
-- **Performance Analytics**: Portfolio returns, allocation analysis, top performers
+- **Historical Performance**: Daily portfolio valuation with batch data fetching
+- **Risk Metrics**: Sharpe ratio, Sortino ratio, max drawdown, VaR, CVaR
+- **Benchmark Comparison**: Compare against Bovespa, S&P 500, or custom benchmarks
 - **Maturity Tracking**: Bond maturity schedules and alerts
+
+📖 **For detailed fund accounting documentation, see [FUND_ACCOUNTING.md](FUND_ACCOUNTING.md)**
 
 ## Project Structure
 
@@ -32,23 +62,34 @@ Portfolio_Tracker/
 │   │   └── orders.csv           # Stock transaction history
 │   ├── crypto/
 │   │   └── orders.csv           # Crypto transaction history
-│   └── bonds/
-│       ├── emissao_bancaria.csv # Bank issued bonds
-│       ├── credito_privado.csv  # Private credit bonds
-│       ├── tesouro.csv          # Treasury bonds
-│       ├── titulos_publicos.csv # Public bonds
-│       └── coe.csv              # Structured notes
+│   ├── bonds/
+│   │   ├── emissao_bancaria.csv # Bank issued bonds
+│   │   ├── credito_privado.csv  # Private credit bonds
+│   │   ├── tesouro.csv          # Treasury bonds
+│   │   ├── titulos_publicos.csv # Public bonds
+│   │   └── coe.csv              # Structured notes
+│   ├── fund/                    # NEW in v3.0
+│   │   ├── client_deposits_withdrawals.csv  # Cash flow tracking
+│   │   └── payments_to_company.csv          # Fee payment tracking
+│   └── historical_data.db       # Historical price database
 ├── src/
 │   ├── market_data.py           # Market data fetcher (Yahoo Finance, Bacen)
 │   ├── stock_portfolio.py       # Stock portfolio calculator
 │   ├── crypto_portfolio.py      # Crypto portfolio calculator
 │   ├── bond_portfolio.py        # Bond portfolio calculator with IPCA
+│   ├── historical_data.py       # Historical data manager (v2.0)
+│   ├── portfolio_performance.py # Performance & risk calculator (v2.0)
+│   ├── fund_accounting.py       # Fund accounting system (v3.0)
+│   ├── performance_analytics.py # Performance analytics (v3.0)
 │   └── portfolio_aggregator.py  # Unified portfolio aggregator
 ├── dashboard/
 │   └── PortfolioDashboard.jsx   # React dashboard component
 ├── app.py                       # Flask API server
-├── Orders (1).xlsx              # Original Excel data file
-└── README.md
+├── README.md                    # This file
+├── FUND_ACCOUNTING.md          # Fund accounting documentation (v3.0)
+├── QUICKSTART.md               # 5-minute quick start guide
+├── requirements.txt            # Python dependencies
+└── Orders (1).xlsx             # Original Excel data file
 ```
 
 ## Installation
@@ -68,8 +109,11 @@ cd Portfolio_Tracker
 
 2. **Install Python dependencies**
 ```bash
+pip install -r requirements.txt
+# Or manually:
 pip install pandas numpy requests beautifulsoup4 lxml
 pip install flask flask-cors
+pip install plotly matplotlib seaborn  # For v3.0 analytics
 ```
 
 3. **Extract data from Excel to CSV** (already done)
