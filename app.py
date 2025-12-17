@@ -29,8 +29,16 @@ def index():
     """API root endpoint"""
     return jsonify({
         'name': 'Apoena Wealth Portfolio Tracker API',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'features': [
+            'Real-time portfolio tracking',
+            'Historical performance analysis',
+            'Risk metrics calculation',
+            'Benchmark comparison',
+            'Multi-asset support (stocks, crypto, bonds)'
+        ],
         'endpoints': {
+            # Portfolio endpoints
             '/api/portfolio/summary': 'Get consolidated portfolio summary',
             '/api/portfolio/positions': 'Get all positions',
             '/api/portfolio/stocks': 'Get stock portfolio data',
@@ -38,7 +46,18 @@ def index():
             '/api/portfolio/bonds': 'Get bond portfolio data',
             '/api/portfolio/top-performers': 'Get top performing assets',
             '/api/portfolio/allocation': 'Get allocation chart data',
-            '/api/portfolio/report': 'Get complete portfolio report'
+            '/api/portfolio/report': 'Get complete portfolio report',
+
+            # Historical performance endpoints
+            '/api/portfolio/historical': 'Get historical portfolio performance (params: period, start_date, end_date)',
+            '/api/portfolio/comparison': 'Compare portfolio to benchmark (params: benchmark, start_date, end_date)',
+
+            # Historical data management
+            '/api/historical/initialize': 'Initialize historical data (POST: start_date, batch_days)',
+            '/api/historical/stats': 'Get historical database statistics',
+
+            # System
+            '/health': 'Health check'
         }
     })
 
@@ -196,6 +215,106 @@ def get_report():
         return jsonify({
             'success': True,
             'data': report,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/portfolio/historical')
+def get_historical_performance():
+    """Get historical portfolio performance"""
+    try:
+        period = request.args.get('period', '1Y')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        p = get_portfolio()
+        history = p.get_historical_performance(
+            start_date=start_date,
+            end_date=end_date,
+            period=period
+        )
+
+        return jsonify({
+            'success': True,
+            'data': history,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/portfolio/comparison')
+def get_benchmark_comparison():
+    """Get portfolio comparison to benchmark"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        benchmark = request.args.get('benchmark', '^BVSP')
+
+        p = get_portfolio()
+        comparison = p.get_performance_comparison(
+            start_date=start_date,
+            end_date=end_date,
+            benchmark=benchmark
+        )
+
+        return jsonify({
+            'success': True,
+            'data': comparison,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/historical/initialize', methods=['POST'])
+def initialize_historical_data():
+    """Initialize historical data for all portfolio assets"""
+    try:
+        data = request.get_json() or {}
+        start_date = data.get('start_date', '2020-01-01')
+        batch_days = data.get('batch_days', 90)
+
+        p = get_portfolio()
+        stats = p.initialize_historical_data(
+            start_date=start_date,
+            batch_days=batch_days
+        )
+
+        return jsonify({
+            'success': True,
+            'data': stats,
+            'message': 'Historical data initialization complete',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/historical/stats')
+def get_historical_stats():
+    """Get statistics about stored historical data"""
+    try:
+        p = get_portfolio()
+        stats = p.historical_manager.get_database_stats()
+
+        return jsonify({
+            'success': True,
+            'data': stats,
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
