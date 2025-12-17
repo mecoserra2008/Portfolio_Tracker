@@ -13,6 +13,8 @@ from .bond_portfolio import BondPortfolio
 from .market_data import MarketDataFetcher
 from .historical_data import HistoricalDataManager
 from .portfolio_performance import PortfolioPerformanceCalculator
+from .fund_accounting import FundAccountingSystem
+from .performance_analytics import PerformanceAnalytics
 
 
 class PortfolioAggregator:
@@ -32,6 +34,10 @@ class PortfolioAggregator:
         # Historical data and performance
         self.historical_manager = HistoricalDataManager()
         self.performance_calculator = PortfolioPerformanceCalculator(self.historical_manager)
+
+        # Fund accounting and analytics
+        self.fund_accounting = FundAccountingSystem()
+        self.performance_analytics = PerformanceAnalytics(self.performance_calculator)
 
         # Currency conversions
         self.usd_brl = None
@@ -458,6 +464,313 @@ class PortfolioAggregator:
             'start_date': start_date,
             'end_date': end_date
         }
+
+    # ===== Fund Accounting Methods =====
+
+    def get_fund_nav(self, as_of_date: str = None) -> Dict:
+        """
+        Get fund Net Asset Value (NAV) including cash and fees
+
+        Args:
+            as_of_date: Date for NAV calculation (default: today)
+
+        Returns:
+            Dictionary with NAV breakdown
+        """
+        summary = self.get_consolidated_summary()
+        portfolio_value = summary['total_portfolio_value']
+        cash_position = self.fund_accounting.cash_manager.get_cash_position(as_of_date)
+        nav = self.fund_accounting.calculate_nav(portfolio_value, cash_position)
+
+        return {
+            'date': as_of_date or datetime.now().strftime('%Y-%m-%d'),
+            'portfolio_value': portfolio_value,
+            'cash_position': cash_position,
+            'outstanding_fees': self.fund_accounting.fee_calculator.get_outstanding_fees()['fee_amount'].sum(),
+            'nav': nav
+        }
+
+    def get_investor_positions(self, as_of_date: str = None) -> Dict:
+        """
+        Get all investor positions and their NAV shares
+
+        Args:
+            as_of_date: Date for calculation (default: today)
+
+        Returns:
+            Dictionary with investor positions
+        """
+        nav_info = self.get_fund_nav(as_of_date)
+        total_nav = nav_info['nav']
+
+        investor_stakes = self.fund_accounting.investor_tracker.get_investor_stakes(as_of_date)
+
+        investors = []
+        for _, investor in investor_stakes.iterrows():
+            investor_nav = total_nav * (investor['stake_pct'] / 100)
+            investors.append({
+                'investor_id': investor['investor_id'],
+                'investor_name': investor['investor_name'],
+                'deposits': investor['deposits'],
+                'withdrawals': investor['withdrawals'],
+                'net_contribution': investor['net_contribution'],
+                'stake_pct': investor['stake_pct'],
+                'nav': investor_nav,
+                'unrealized_gain': investor_nav - investor['net_contribution'],
+                'return_pct': ((investor_nav - investor['net_contribution']) / investor['net_contribution'] * 100)
+                    if investor['net_contribution'] > 0 else 0
+            })
+
+        return {
+            'as_of_date': as_of_date or datetime.now().strftime('%Y-%m-%d'),
+            'total_nav': total_nav,
+            'num_investors': len(investors),
+            'investors': investors
+        }
+
+    def calculate_period_fees(
+        self,
+        period_start: str,
+        period_end: str,
+        calculate_management: bool = True,
+        calculate_performance: bool = True
+    ) -> Dict:
+        """
+        Calculate management and performance fees for a period
+
+        Args:
+            period_start: Period start date
+            period_end: Period end date
+            calculate_management: Calculate 2% management fee
+            calculate_performance: Calculate 20% performance fee
+
+        Returns:
+            Dictionary with fee calculations
+        """
+        nav_start = self.get_fund_nav(period_start)['nav']
+        nav_end = self.get_fund_nav(period_end)['nav']
+
+        fees = self.fund_accounting.process_period_fees(
+            period_start,
+            period_end,
+            nav_start,
+            nav_end,
+            calculate_management,
+            calculate_performance
+        )
+
+        return fees
+
+    def get_fee_summary(self, start_date: str = None, end_date: str = None) -> Dict:
+        """
+        Get summary of all fees
+
+        Args:
+            start_date: Start date (optional)
+            end_date: End date (optional)
+
+        Returns:
+            Fee summary
+        """
+        return self.fund_accounting.fee_calculator.get_fee_summary(start_date, end_date)
+
+    # ===== Performance Analytics Methods =====
+
+    def get_monthly_performance_heatmap(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        chart_type: str = 'plotly'
+    ):
+        """
+        Get monthly performance heatmap
+
+        Args:
+            start_date: Start date (default: 3 years ago)
+            end_date: End date (default: today)
+            chart_type: 'plotly' or 'seaborn'
+
+        Returns:
+            Plotly or Matplotlib figure
+        """
+        if not start_date:
+            end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+            start_date = (pd.Timestamp(end_date) - timedelta(days=1095)).strftime('%Y-%m-%d')  # 3 years
+
+        # Get portfolio history
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return None
+
+        # Calculate monthly returns
+        monthly_returns = self.performance_analytics.calculate_monthly_returns(history_df)
+
+        if chart_type == 'seaborn':
+            return self.performance_analytics.create_monthly_returns_heatmap_seaborn(monthly_returns)
+        else:
+            return self.performance_analytics.create_monthly_returns_heatmap_plotly(monthly_returns)
+
+    def get_cumulative_returns_comparison(
+        self,
+        asset_symbols: List[str],
+        asset_names: Dict[str, str] = None,
+        start_date: str = None,
+        end_date: str = None
+    ) -> Dict:
+        """
+        Compare portfolio cumulative returns with individual assets
+
+        Args:
+            asset_symbols: List of symbols to compare
+            asset_names: Optional display names for symbols
+            start_date: Start date (default: 1 year ago)
+            end_date: End date (default: today)
+
+        Returns:
+            Dictionary with comparison data and chart
+        """
+        if not start_date:
+            end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+            start_date = (pd.Timestamp(end_date) - timedelta(days=365)).strftime('%Y-%m-%d')
+
+        # Get portfolio history
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return {'comparison': [], 'chart': None}
+
+        # Compare with assets
+        comparison_df = self.performance_analytics.compare_cumulative_returns(
+            history_df,
+            asset_symbols,
+            asset_names
+        )
+
+        # Create chart
+        chart = self.performance_analytics.create_cumulative_return_chart(comparison_df)
+
+        return {
+            'comparison': comparison_df.to_dict('records'),
+            'chart': chart
+        }
+
+    def get_alpha_analysis(
+        self,
+        benchmark_symbol: str = '^BVSP',
+        start_date: str = None,
+        end_date: str = None
+    ) -> Dict:
+        """
+        Get alpha analysis vs benchmark
+
+        Args:
+            benchmark_symbol: Benchmark symbol (default: Bovespa)
+            start_date: Start date (default: 1 year ago)
+            end_date: End date (default: today)
+
+        Returns:
+            Dictionary with alpha metrics and visualization
+        """
+        if not start_date:
+            end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+            start_date = (pd.Timestamp(end_date) - timedelta(days=365)).strftime('%Y-%m-%d')
+
+        # Get portfolio history
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return {'metrics': {}, 'chart': None}
+
+        # Compare to benchmark
+        comparison_df = self.performance_calculator.compare_to_benchmark(
+            history_df,
+            benchmark_symbol
+        )
+
+        # Calculate alpha metrics
+        alpha_metrics = {}
+        if 'daily_return' in comparison_df.columns and 'benchmark_return' in comparison_df.columns:
+            alpha_metrics = self.performance_analytics.calculate_alpha(
+                comparison_df['daily_return'],
+                comparison_df['benchmark_return']
+            )
+
+        # Create visualization
+        chart = self.performance_analytics.create_alpha_visualization(
+            comparison_df,
+            comparison_df,
+            title=f'Alpha Analysis vs {benchmark_symbol}'
+        )
+
+        return {
+            'metrics': alpha_metrics,
+            'comparison': comparison_df[['date', 'cumulative_return', 'benchmark_cumulative',
+                                        'cumulative_alpha']].to_dict('records') if 'cumulative_alpha' in comparison_df.columns else [],
+            'chart': chart,
+            'benchmark_symbol': benchmark_symbol,
+            'start_date': start_date,
+            'end_date': end_date
+        }
+
+    def generate_analytics_dashboard(
+        self,
+        comparison_assets: List[str] = None,
+        asset_names: Dict[str, str] = None,
+        benchmark_symbol: str = '^BVSP'
+    ) -> Dict:
+        """
+        Generate complete performance analytics dashboard
+
+        Args:
+            comparison_assets: Assets to compare with portfolio
+            asset_names: Display names for assets
+            benchmark_symbol: Benchmark for alpha calculation
+
+        Returns:
+            Dictionary with all analytics figures
+        """
+        # Get 1-year history
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (pd.Timestamp(end_date) - timedelta(days=365)).strftime('%Y-%m-%d')
+
+        history_df = self.performance_calculator.calculate_portfolio_history(
+            self.stock_portfolio,
+            self.crypto_portfolio,
+            self.bond_portfolio,
+            start_date,
+            end_date
+        )
+
+        if history_df.empty:
+            return {}
+
+        figures = self.performance_analytics.create_performance_dashboard(
+            history_df,
+            comparison_assets,
+            asset_names,
+            benchmark_symbol
+        )
+
+        return figures
 
 
 def test_portfolio_aggregator():
