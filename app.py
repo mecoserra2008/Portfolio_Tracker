@@ -29,13 +29,19 @@ def index():
     """API root endpoint"""
     return jsonify({
         'name': 'Apoena Wealth Portfolio Tracker API',
-        'version': '2.0.0',
+        'version': '3.0.0',
         'features': [
             'Real-time portfolio tracking',
             'Historical performance analysis',
             'Risk metrics calculation',
             'Benchmark comparison',
-            'Multi-asset support (stocks, crypto, bonds)'
+            'Multi-asset support (stocks, crypto, bonds)',
+            'Fund accounting with NAV tracking',
+            'Investor stake management',
+            'Management and performance fee calculation',
+            'Monthly performance heatmaps',
+            'Cumulative returns comparison',
+            'Alpha measurement and tracking'
         ],
         'endpoints': {
             # Portfolio endpoints
@@ -55,6 +61,20 @@ def index():
             # Historical data management
             '/api/historical/initialize': 'Initialize historical data (POST: start_date, batch_days)',
             '/api/historical/stats': 'Get historical database statistics',
+
+            # Fund accounting endpoints
+            '/api/fund/nav': 'Get fund NAV (params: as_of_date)',
+            '/api/fund/investors': 'Get investor positions and stakes (params: as_of_date)',
+            '/api/fund/fees/calculate': 'Calculate fees for period (POST: period_start, period_end)',
+            '/api/fund/fees/summary': 'Get fee summary (params: start_date, end_date)',
+            '/api/fund/cash/deposit': 'Record cash deposit (POST: date, investor_id, investor_name, amount, currency)',
+            '/api/fund/cash/withdrawal': 'Record cash withdrawal (POST: date, investor_id, investor_name, amount, currency)',
+
+            # Performance analytics endpoints
+            '/api/analytics/heatmap': 'Get monthly performance heatmap (params: start_date, end_date, format)',
+            '/api/analytics/cumulative-returns': 'Compare cumulative returns (params: symbols, start_date, end_date)',
+            '/api/analytics/alpha': 'Get alpha analysis (params: benchmark, start_date, end_date)',
+            '/api/analytics/dashboard': 'Get complete analytics dashboard (params: symbols, benchmark)',
 
             # System
             '/health': 'Health check'
@@ -315,6 +335,313 @@ def get_historical_stats():
         return jsonify({
             'success': True,
             'data': stats,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ===== Fund Accounting Endpoints =====
+
+@app.route('/api/fund/nav')
+def get_fund_nav():
+    """Get fund NAV"""
+    try:
+        as_of_date = request.args.get('as_of_date')
+        p = get_portfolio()
+        nav_data = p.get_fund_nav(as_of_date)
+        return jsonify({
+            'success': True,
+            'data': nav_data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/fund/investors')
+def get_investors():
+    """Get investor positions and stakes"""
+    try:
+        as_of_date = request.args.get('as_of_date')
+        p = get_portfolio()
+        investors_data = p.get_investor_positions(as_of_date)
+        return jsonify({
+            'success': True,
+            'data': investors_data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/fund/fees/calculate', methods=['POST'])
+def calculate_fees():
+    """Calculate fees for a period"""
+    try:
+        data = request.get_json() or {}
+        period_start = data.get('period_start')
+        period_end = data.get('period_end')
+        calc_management = data.get('calculate_management', True)
+        calc_performance = data.get('calculate_performance', True)
+
+        if not period_start or not period_end:
+            return jsonify({
+                'success': False,
+                'error': 'period_start and period_end are required'
+            }), 400
+
+        p = get_portfolio()
+        fees = p.calculate_period_fees(
+            period_start,
+            period_end,
+            calc_management,
+            calc_performance
+        )
+
+        return jsonify({
+            'success': True,
+            'data': fees,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/fund/fees/summary')
+def get_fees_summary():
+    """Get fee summary"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        p = get_portfolio()
+        summary = p.get_fee_summary(start_date, end_date)
+        return jsonify({
+            'success': True,
+            'data': summary,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/fund/cash/deposit', methods=['POST'])
+def add_deposit():
+    """Record a cash deposit"""
+    try:
+        data = request.get_json() or {}
+        date = data.get('date')
+        investor_id = data.get('investor_id')
+        investor_name = data.get('investor_name')
+        amount = data.get('amount')
+        currency = data.get('currency', 'BRL')
+        description = data.get('description', '')
+
+        if not all([date, investor_id, investor_name, amount]):
+            return jsonify({
+                'success': False,
+                'error': 'date, investor_id, investor_name, and amount are required'
+            }), 400
+
+        p = get_portfolio()
+        p.fund_accounting.cash_manager.add_transaction(
+            date=date,
+            investor_id=investor_id,
+            investor_name=investor_name,
+            transaction_type='deposit',
+            amount=float(amount),
+            currency=currency,
+            description=description
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Deposit recorded successfully',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/fund/cash/withdrawal', methods=['POST'])
+def add_withdrawal():
+    """Record a cash withdrawal"""
+    try:
+        data = request.get_json() or {}
+        date = data.get('date')
+        investor_id = data.get('investor_id')
+        investor_name = data.get('investor_name')
+        amount = data.get('amount')
+        currency = data.get('currency', 'BRL')
+        description = data.get('description', '')
+
+        if not all([date, investor_id, investor_name, amount]):
+            return jsonify({
+                'success': False,
+                'error': 'date, investor_id, investor_name, and amount are required'
+            }), 400
+
+        p = get_portfolio()
+        p.fund_accounting.cash_manager.add_transaction(
+            date=date,
+            investor_id=investor_id,
+            investor_name=investor_name,
+            transaction_type='withdrawal',
+            amount=float(amount),
+            currency=currency,
+            description=description
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Withdrawal recorded successfully',
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ===== Performance Analytics Endpoints =====
+
+@app.route('/api/analytics/heatmap')
+def get_heatmap():
+    """Get monthly performance heatmap"""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        format_type = request.args.get('format', 'json')  # 'json' or 'html'
+
+        p = get_portfolio()
+        fig = p.get_monthly_performance_heatmap(start_date, end_date, chart_type='plotly')
+
+        if fig is None:
+            return jsonify({
+                'success': False,
+                'error': 'No data available for heatmap'
+            }), 404
+
+        if format_type == 'html':
+            html = fig.to_html(full_html=True, include_plotlyjs='cdn')
+            return html, 200, {'Content-Type': 'text/html'}
+        else:
+            return jsonify({
+                'success': True,
+                'data': fig.to_json(),
+                'timestamp': datetime.now().isoformat()
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/cumulative-returns')
+def get_cumulative_returns():
+    """Get cumulative returns comparison"""
+    try:
+        symbols_str = request.args.get('symbols', '')
+        symbols = [s.strip() for s in symbols_str.split(',') if s.strip()]
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        if not symbols:
+            return jsonify({
+                'success': False,
+                'error': 'At least one symbol is required'
+            }), 400
+
+        p = get_portfolio()
+        result = p.get_cumulative_returns_comparison(
+            symbols,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        # Convert chart to JSON
+        if result.get('chart'):
+            result['chart'] = result['chart'].to_json()
+
+        return jsonify({
+            'success': True,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/alpha')
+def get_alpha():
+    """Get alpha analysis"""
+    try:
+        benchmark = request.args.get('benchmark', '^BVSP')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        p = get_portfolio()
+        result = p.get_alpha_analysis(benchmark, start_date, end_date)
+
+        # Convert chart to JSON
+        if result.get('chart'):
+            result['chart'] = result['chart'].to_json()
+
+        return jsonify({
+            'success': True,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/dashboard')
+def get_analytics_dashboard():
+    """Get complete analytics dashboard"""
+    try:
+        symbols_str = request.args.get('symbols', '')
+        symbols = [s.strip() for s in symbols_str.split(',') if s.strip()] if symbols_str else None
+        benchmark = request.args.get('benchmark', '^BVSP')
+
+        p = get_portfolio()
+        figures = p.generate_analytics_dashboard(symbols, benchmark_symbol=benchmark)
+
+        # Convert figures to JSON
+        result = {}
+        for key, fig in figures.items():
+            if fig:
+                result[key] = fig.to_json()
+
+        return jsonify({
+            'success': True,
+            'data': result,
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:

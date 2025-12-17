@@ -1,0 +1,3 @@
+date,investor_id,investor_name,fee_type,period_start,period_end,nav_start,nav_end,fee_rate,fee_amount,paid,payment_date
+2024-12-31,FUND,Fund Level,management,2024-01-01,2024-12-31,1000000.0,1200000.0,0.02,24000.000000000004,False,
+2024-12-31,FUND,Fund Level,performance,2024-01-01,2024-12-31,1000000.0,1200000.0,0.2,40000.0,False,
