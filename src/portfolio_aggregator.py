@@ -10,7 +10,10 @@ from typing import Dict, List
 from .stock_portfolio import StockPortfolio
 from .crypto_portfolio import CryptoPortfolio
 from .bond_portfolio import BondPortfolio
+from .futures_portfolio import FuturesPortfolio
+from .options_portfolio import OptionsPortfolio
 from .market_data import MarketDataFetcher
+from .ibkr_data import IBKRDataFetcherMock
 from .historical_data import HistoricalDataManager
 from .portfolio_performance import PortfolioPerformanceCalculator
 from .fund_accounting import FundAccountingSystem
@@ -26,10 +29,16 @@ class PortfolioAggregator:
         """Initialize portfolio aggregator"""
         self.market_data = MarketDataFetcher()
 
+        # IBKR data fetcher for derivatives
+        self.ibkr_data = IBKRDataFetcherMock()
+        self.ibkr_data.connect()
+
         # Initialize individual portfolios
         self.stock_portfolio = StockPortfolio('data/stocks/orders.csv', self.market_data)
         self.crypto_portfolio = CryptoPortfolio('data/crypto/orders.csv', self.market_data)
         self.bond_portfolio = BondPortfolio('data/bonds', self.market_data)
+        self.futures_portfolio = FuturesPortfolio('data/futures/orders.csv', self.ibkr_data)
+        self.options_portfolio = OptionsPortfolio('data/options/orders.csv', self.ibkr_data)
 
         # Historical data and performance
         self.historical_manager = HistoricalDataManager()
@@ -71,28 +80,35 @@ class PortfolioAggregator:
         stock_summary = self.stock_portfolio.get_portfolio_summary()
         crypto_summary = self.crypto_portfolio.get_portfolio_summary(currency=base_currency)
         bond_summary = self.bond_portfolio.get_portfolio_summary()
+        futures_summary = self.futures_portfolio.get_portfolio_summary()
+        options_summary = self.options_portfolio.get_portfolio_summary()
 
         # Exchange rates
         rates = self._get_exchange_rates()
 
-        # Convert stock values to base currency (assuming stocks are in their local currencies)
-        # For now, assuming most values are already in BRL or will need conversion
+        # Convert values to base currency
         stock_value_brl = stock_summary['total_market_value']
         crypto_value_brl = crypto_summary['total_market_value']
         bond_value_brl = bond_summary['total_current_value']
+        futures_value_brl = futures_summary['total_notional']  # Notional value for futures
+        options_value_brl = options_summary['total_market_value']
 
         # Total portfolio
-        total_value = stock_value_brl + crypto_value_brl + bond_value_brl
+        total_value = stock_value_brl + crypto_value_brl + bond_value_brl + futures_value_brl + options_value_brl
 
         # Calculate allocations
         stock_allocation = (stock_value_brl / total_value * 100) if total_value > 0 else 0
         crypto_allocation = (crypto_value_brl / total_value * 100) if total_value > 0 else 0
         bond_allocation = (bond_value_brl / total_value * 100) if total_value > 0 else 0
+        futures_allocation = (futures_value_brl / total_value * 100) if total_value > 0 else 0
+        options_allocation = (options_value_brl / total_value * 100) if total_value > 0 else 0
 
         # Calculate total P&L
         total_pnl = (stock_summary['total_pnl'] +
                      crypto_summary['total_pnl'] +
-                     bond_summary['total_pnl'])
+                     bond_summary['total_pnl'] +
+                     futures_summary['total_pnl'] +
+                     options_summary['total_pnl'])
 
         total_cost = (stock_summary['total_cost_basis'] +
                       crypto_summary['total_cost_basis'] +
@@ -126,6 +142,28 @@ class PortfolioAggregator:
                     'num_positions': bond_summary['num_bonds'],
                     'pnl': bond_summary['total_pnl'],
                     'return_pct': bond_summary['total_return_pct']
+                },
+                'futures': {
+                    'value': futures_value_brl,
+                    'allocation_pct': futures_allocation,
+                    'num_contracts': futures_summary['num_contracts'],
+                    'pnl': futures_summary['total_pnl'],
+                    'unrealized_pnl': futures_summary['total_unrealized_pnl'],
+                    'realized_pnl': futures_summary['total_realized_pnl'],
+                    'long_contracts': futures_summary['long_contracts'],
+                    'short_contracts': futures_summary['short_contracts']
+                },
+                'options': {
+                    'value': options_value_brl,
+                    'allocation_pct': options_allocation,
+                    'num_contracts': options_summary['num_contracts'],
+                    'pnl': options_summary['total_pnl'],
+                    'unrealized_pnl': options_summary['total_unrealized_pnl'],
+                    'realized_pnl': options_summary['total_realized_pnl'],
+                    'portfolio_delta': options_summary['portfolio_delta'],
+                    'portfolio_theta': options_summary['portfolio_theta'],
+                    'long_contracts': options_summary['long_contracts'],
+                    'short_contracts': options_summary['short_contracts']
                 }
             },
             'exchange_rates': rates
@@ -141,7 +179,9 @@ class PortfolioAggregator:
         return {
             'stocks': self.stock_portfolio.get_current_values().to_dict('records'),
             'crypto': self.crypto_portfolio.get_current_values().to_dict('records'),
-            'bonds': self.bond_portfolio.get_current_values().to_dict('records')
+            'bonds': self.bond_portfolio.get_current_values().to_dict('records'),
+            'futures': self.futures_portfolio.get_current_values().to_dict('records'),
+            'options': self.options_portfolio.get_current_values().to_dict('records')
         }
 
     def get_top_performers(self, n: int = 10) -> pd.DataFrame:

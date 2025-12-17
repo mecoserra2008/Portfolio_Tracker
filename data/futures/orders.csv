@@ -1,0 +1,4 @@
+date,symbol,exchange,expiry,side,quantity,price,multiplier,currency,commission,description
+2024-01-15,ES,CME,20240315,long,2,4750.0,50,USD,5.0,Long 2 ES March 2024
+2024-01-20,NQ,CME,20240315,short,1,17500.0,20,USD,3.0,Short 1 NQ March 2024
+2024-02-01,ES,CME,20240315,long,-1,4850.0,50,USD,2.5,Close 1 ES contract
