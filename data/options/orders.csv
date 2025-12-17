@@ -1,0 +1,4 @@
+date,underlying,expiry,strike,type,side,quantity,premium,multiplier,currency,commission,description
+2024-01-15,SPY,20240315,450,call,long,5,12.5,100,USD,6.5,Long 5 SPY Mar 450 Calls
+2024-01-20,SPY,20240315,440,put,short,3,8.0,100,USD,4.5,Short 3 SPY Mar 440 Puts
+2024-02-01,QQQ,20240315,380,put,long,2,6.25,100,USD,3.0,Long 2 QQQ Mar 380 Puts
